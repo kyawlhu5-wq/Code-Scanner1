@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import date
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
@@ -12,15 +13,21 @@ app = Client("starlink_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOK
 
 DATA_FILE = "vouchers.json"
 
+# Daily Limit Setting
+DAILY_LIMIT = 2
+
 # Helper Functions for Data Storage
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"vouchers": [], "sent_messages": {}}
+        return {"vouchers": [], "sent_messages": {}, "user_limits": {}}
     with open(DATA_FILE, "r") as f:
         try:
-            return json.load(f)
+            data = json.load(f)
+            if "user_limits" not in data:
+                data["user_limits"] = {}
+            return data
         except Exception:
-            return {"vouchers": [], "sent_messages": {}}
+            return {"vouchers": [], "sent_messages": {}, "user_limits": {}}
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
@@ -96,11 +103,27 @@ async def start_cmd(client, message: Message):
         reply_markup=buttons
     )
 
-# 4. Handle Code Distribution for Users (1, 2, or 3 Codes)
+# 4. Handle Code Distribution for Users (With Daily 2-Times Limit)
 @app.on_callback_query(filters.regex(r"^get_(\d+)$"))
 async def handle_user_get_codes(client, callback_query: CallbackQuery):
-    count = int(callback_query.data.split("_")[1])
+    user_id = str(callback_query.from_user.id)
+    today_str = str(date.today())
+    
     data = load_data()
+    user_limits = data.get("user_limits", {})
+    
+    # User Daily Limit Check
+    user_record = user_limits.get(user_id, {})
+    if user_record.get("date") == today_str:
+        used_count = user_record.get("count", 0)
+    else:
+        used_count = 0
+        
+    if used_count >= DAILY_LIMIT:
+        await callback_query.answer("⚠️ မင်း ဒီနေ့အတွက် ၂ ကြိမ်ယူပြီးပါပြီ! မနက်ဖြန်မှ ထပ်ယူပေးပါနော်။", show_alert=True)
+        return
+
+    count = int(callback_query.data.split("_")[1])
     vouchers = data.get("vouchers", [])
     sent_messages = data.get("sent_messages", {})
     
@@ -125,6 +148,13 @@ async def handle_user_get_codes(client, callback_query: CallbackQuery):
     
     sent_msg = await callback_query.message.reply_text(text, reply_markup=buttons)
     await callback_query.answer()
+    
+    # Update Daily Limit
+    user_limits[user_id] = {
+        "date": today_str,
+        "count": used_count + 1
+    }
+    data["user_limits"] = user_limits
     
     chat_id = sent_msg.chat.id
     msg_id = sent_msg.id
