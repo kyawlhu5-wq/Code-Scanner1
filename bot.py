@@ -576,7 +576,7 @@ async def handle_user_get_codes(client, callback_query: CallbackQuery):
     sent_messages = data.get("sent_messages", {})
     
     if len(vouchers) < count:
-        await callback_query.answer(f"⚠️ အခုလောလောဆယ် စနစ်ထဲမှာ Voucher Code ({count}) ခု မရှိသေးပါဘူးဆရာရေ။", show_alert=True)
+        await callback_query.answer(f"⚠️ အခုလောလောဆယ် စနစ်ထဲမှာ Voucher Code ({count}) ခု မရှိသေးပါဘူးဆရာရေ..အရေးကြီးရင် မက်ဆင်ဂျာမှာ လာတောင်းလေ ဘရို။", show_alert=True)
         return
     
     selected_vouchers = vouchers[:count]
