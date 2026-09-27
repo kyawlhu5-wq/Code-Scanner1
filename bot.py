@@ -8,7 +8,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 
 # Credentials
 API_ID = 31526501
-API_HASH = "YOUR_API_HASH"
+API_HASH = "cf2792e0bcbdb620a31dd65a43f88c8a"
 BOT_TOKEN = "YOUR_BOT_TOKEN"
 
 app = Client(
