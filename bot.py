@@ -12,77 +12,197 @@ app = Client("starlink_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOK
 
 DATA_FILE = "vouchers.json"
 
-def load_vouchers():
+# Helper Functions for Data Storage
+def load_data():
     if not os.path.exists(DATA_FILE):
-        return []
+        return {"vouchers": [], "sent_messages": {}}
     with open(DATA_FILE, "r") as f:
-        return json.load(f)
+        try:
+            return json.load(f)
+        except Exception:
+            return {"vouchers": [], "sent_messages": {}}
 
-def save_vouchers(data):
+def save_data(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-# ၁။ Note ထဲက Copy ကူးပြီး Paste လုပ်လိုက်သည့် Message များကို အလိုအလျောက် ဖတ်ရှုခြင်း
-@app.on_message(filters.text & ~filters.command(["start", "clear"]))
+# 1. Admin Bulk Add Code via /add Command
+@app.on_message(filters.command("add"))
 async def handle_bulk_add(client, message: Message):
-    lines = message.text.strip().split("\n")
-    added_items = []
-    vouchers = load_vouchers()
+    raw_text = message.text.replace("/add", "", 1).strip()
+    
+    if not raw_text:
+        await message.reply_text("⚠️ `/add` ၏ အောက်တွင် Code များကို Paste လုပ်၍ ပို့ပေးပါ ဆရာကျော်လူ။\n\nဥပမာ -\n`/add`\n`STL-1122 24နာရီ`\n`STL-3344 3ရက်`")
+        return
 
+    lines = raw_text.split("\n")
+    data = load_data()
+    vouchers = data.get("vouchers", [])
+    
+    added_count = 0
     for line in lines:
         parts = line.strip().split()
         if len(parts) >= 2:
             code = parts[0]
             time_left = " ".join(parts[1:])
-            vouchers.append({"code": code, "time": time_left})
-            added_items.append(f"• `{code}` ({time_left})")
+            if not any(v['code'] == code for v in vouchers):
+                vouchers.append({"code": code, "time": time_left})
+                added_count += 1
 
-    if added_items:
-        save_vouchers(vouchers)
-        response_text = "✅ **အောက်ပါ Voucher Code များ စနစ်ထဲ သို့ ထည့်သွင်းပြီးပါပြီ -**\n\n" + "\n".join(added_items)
-        await message.reply_text(response_text)
+    if added_count > 0:
+        data["vouchers"] = vouchers
+        save_data(data)
+        
+        await message.reply_text(f"✅ **Voucher Code ({added_count}) ခုကို စနစ်ထဲသို့ ထည့်သွင်းပြီးပါပြီ!**")
+        try:
+            await message.delete()
+        except Exception:
+            pass
     else:
-        await message.reply_text("⚠️ စာသားပုံစံ မမှန်ပါ။\nဥပမာ - `STL-1122-3344 24နာရီ` ပုံစံအတိုင်း ပို့ပေးပါဆရာ။")
+        await message.reply_text("⚠️ `/add` ၏ အောက်တွင် Code များကို Paste လုပ်၍ ပို့ပေးပါ ဆရာကျော်လူ။\n\nဥပမာ -\n`/add`\n`STL-1122 24နာရီ` ပုံစံအတိုင်း ပို့ပေးပါဆရာ။")
 
-# ၂။ /start Command (User များ စာရင်း ကြည့်ရန်)
+# 2. Admin Dashboard Command (/admin)
+@app.on_message(filters.command("admin"))
+async def admin_dashboard(client, message: Message):
+    data = load_data()
+    vouchers = data.get("vouchers", [])
+    
+    if not vouchers:
+        await message.reply_text("❌ **လက်ရှိ စနစ်ထဲတွင် Voucher Code များ မရှိသေးပါ။**")
+        return
+    
+    text = "⚙️ **ADMIN DASHBOARD - လက်ရှိ ရှိနေသော Code များ**\n\n"
+    buttons = []
+    
+    for idx, item in enumerate(vouchers, 1):
+        text += f"{idx}. Code: `{item['code']}` | သက်တမ်း: **{item['time']}**\n"
+        buttons.append([InlineKeyboardButton(f"❌ ဖျက်မည်: {item['code']}", callback_data=f"adm_del_{item['code']}")])
+    
+    buttons.append([InlineKeyboardButton("🗑️ Code အားလုံးကို ဖျက်မည်", callback_data="adm_del_all")])
+    
+    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# 3. User Command (/start)
 @app.on_message(filters.command("start"))
 async def start_cmd(client, message: Message):
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Voucher Code များနှင့် သက်တမ်း ကြည့်မည်", callback_data="view_codes")]
+        [InlineKeyboardButton("🎟️ 1 Code ယူမည်", callback_data="get_1")],
+        [InlineKeyboardButton("🎟️ 2 Codes ယူမည်", callback_data="get_2")],
+        [InlineKeyboardButton("🎟️ 3 Codes ယူမည်", callback_data="get_3")]
     ])
     await message.reply_text(
-        "👋 **Starlink Voucher Store မှ ကြိုဆိုပါတယ်!**\n\n"
-        "လက်ရှိ ရရှိနိုင်သော Voucher Code များနှင့် သက်တမ်းကို ကြည့်ရန် အောက်ပါ ခလုတ်ကို နှိပ်ပါ -",
+        "👋 **သခင်ကြီးဟာ မင့်တို့ဖို့ အပင်ပန်းခံပေးနေပါတယ်!**\n\n"
+        "မင်းတို့ လိုအပ်သလောက်ပဲ Voucher Code အရေအတွက်ကို အောက်ပါ ခလုတ်များမှ ရွေးချယ်ပါ -",
         reply_markup=buttons
     )
 
-# ၃။ ခလုတ်နှိပ်ပါက ထည့်ထားသမျှ Code များကို အများသူငာ ကြည့်ရှုနိုင်ခြင်း
-@app.on_callback_query(filters.regex("view_codes"))
-async def handle_view_codes(client, callback_query: CallbackQuery):
-    vouchers = load_vouchers()
+# 4. Handle Code Distribution for Users (1, 2, or 3 Codes)
+@app.on_callback_query(filters.regex(r"^get_(\d+)$"))
+async def handle_user_get_codes(client, callback_query: CallbackQuery):
+    count = int(callback_query.data.split("_")[1])
+    data = load_data()
+    vouchers = data.get("vouchers", [])
+    sent_messages = data.get("sent_messages", {})
     
-    if not vouchers:
-        await callback_query.message.edit_text(
-            "❌ **လောလောဆယ် Voucher Code များ မရှိသေးပါ။**",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Refresh ပြုလုပ်မည်", callback_data="view_codes")]])
-        )
+    if len(vouchers) < count:
+        await callback_query.answer(f"⚠️ အခုလောလောဆယ်တော့ စနစ်ထဲမှာ Voucher Code ({count}) ခု မရှိသေးဘူးနော် ကိုယ့်ဆရာ။", show_alert=True)
         return
     
-    text = "📋 **အသုံးပြုနိုင်သော Starlink Voucher Codes များ -**\n\n"
-    for idx, item in enumerate(vouchers, 1):
-        text += f"{idx}. Code: `{item['code']}`\n   ⏳ သက်တမ်း: **{item['time']}**\n\n"
+    selected_vouchers = vouchers[:count]
     
-    next_button = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 Refresh ပြုလုပ်မည်", callback_data="view_codes")]
+    text = f"📋 **သင်ယူထားသော Starlink Voucher Code ({count}) ခု -**\n\n"
+    code_list = []
+    for item in selected_vouchers:
+        text += f"🔑 Code: `{item['code']}`\n⏳ သက်တမ်း: **{item['time']}**\n\n"
+        code_list.append(item['code'])
+    
+    text += "⚠️ **အသုံးပြုပြီးပါက ချက်ချင်းပဲ အောက်ပါ ခလုတ်ကို နှိပ်၍ code ကိုစာရင်းမှ ဖျက်ပေးပါရန်။**"
+    
+    codes_key = ",".join(code_list)
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ သုံးပြီးပါပြီ (ဖျက်မည်)", callback_data=f"usr_del_{codes_key}")]
     ])
     
-    await callback_query.message.edit_text(text, reply_markup=next_button)
+    sent_msg = await callback_query.message.reply_text(text, reply_markup=buttons)
+    await callback_query.answer()
+    
+    chat_id = sent_msg.chat.id
+    msg_id = sent_msg.id
+    
+    for c in code_list:
+        if c not in sent_messages:
+            sent_messages[c] = []
+        sent_messages[c].append({"chat_id": chat_id, "msg_id": msg_id})
+    
+    data["sent_messages"] = sent_messages
+    save_data(data)
 
-# ၄။ Code စာရင်းအားလုံး ပြန်ဖျက်ချင်ပါက သုံးရန် Command (/clear)
-@app.on_message(filters.command("clear"))
-async def clear_cmd(client, message: Message):
-    save_vouchers([])
-    await message.reply_text("🗑️ Voucher Code စာရင်း အားလုံးကို ရှင်းလင်းလိုက်ပါပြီ။")
+# 5. User Mark as Used / Delete Action
+@app.on_callback_query(filters.regex(r"^usr_del_"))
+async def handle_user_delete(client, callback_query: CallbackQuery):
+    codes_str = callback_query.data.replace("usr_del_", "")
+    codes_to_del = codes_str.split(",")
+    
+    data = load_data()
+    vouchers = data.get("vouchers", [])
+    
+    vouchers = [v for v in vouchers if v['code'] not in codes_to_del]
+    data["vouchers"] = vouchers
+    save_data(data)
+    
+    try:
+        await callback_query.message.delete()
+    except Exception:
+        pass
+    
+    await callback_query.answer("✅ Code များကို သုံးပြီးကြောင်း မှတ်သားပြီး ဖျက်လိုက်ပါပြီ။", show_alert=True)
+
+# 6. Admin Delete Action (Synchronized Global Deletion)
+@app.on_callback_query(filters.regex(r"^adm_del_"))
+async def handle_admin_delete(client, callback_query: CallbackQuery):
+    action = callback_query.data.replace("adm_del_", "")
+    data = load_data()
+    vouchers = data.get("vouchers", [])
+    sent_messages = data.get("sent_messages", {})
+    
+    if action == "all":
+        for code, msg_list in sent_messages.items():
+            for m in msg_list:
+                try:
+                    await client.delete_messages(chat_id=m["chat_id"], message_ids=m["msg_id"])
+                except Exception:
+                    pass
+        data["vouchers"] = []
+        data["sent_messages"] = {}
+        save_data(data)
+        await callback_query.message.edit_text("🗑️ **Voucher Code အားလုံးကို အပြီးတိုင် ဖျက်လိုက်ပါပြီ။**")
+    else:
+        target_code = action
+        if target_code in sent_messages:
+            for m in sent_messages[target_code]:
+                try:
+                    await client.delete_messages(chat_id=m["chat_id"], message_ids=m["msg_id"])
+                except Exception:
+                    pass
+            del sent_messages[target_code]
+        
+        vouchers = [v for v in vouchers if v['code'] != target_code]
+        data["vouchers"] = vouchers
+        data["sent_messages"] = sent_messages
+        save_data(data)
+        
+        await callback_query.answer(f"✅ Code ({target_code}) ကို ဖျက်လိုက်ပါပြီ။", show_alert=True)
+        
+        if not vouchers:
+            await callback_query.message.edit_text("❌ **လက်ရှိ စနစ်ထဲတွင် Voucher Code များ မရှိတော့ပါ။**")
+        else:
+            text = "⚙️ **ADMIN DASHBOARD - လက်ရှိ ရှိနေသော Code များ**\n\n"
+            buttons = []
+            for idx, item in enumerate(vouchers, 1):
+                text += f"{idx}. Code: `{item['code']}` | သက်တမ်း: **{item['time']}**\n"
+                buttons.append([InlineKeyboardButton(f"❌ ဖျက်မည်: {item['code']}", callback_data=f"adm_del_{item['code']}")])
+            buttons.append([InlineKeyboardButton("🗑️ Code အားလုံးကို ဖျက်မည်", callback_data="adm_del_all")])
+            await callback_query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 if __name__ == "__main__":
     app.run()
