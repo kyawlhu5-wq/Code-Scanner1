@@ -19,15 +19,17 @@ DAILY_LIMIT = 2
 # Helper Functions for Data Storage
 def load_data():
     if not os.path.exists(DATA_FILE):
-        return {"vouchers": [], "sent_messages": {}, "user_limits": {}}
+        return {"vouchers": [], "sent_messages": {}, "user_limits": {}, "users": {}}
     with open(DATA_FILE, "r") as f:
         try:
             data = json.load(f)
             if "user_limits" not in data:
                 data["user_limits"] = {}
+            if "users" not in data:
+                data["users"] = {}
             return data
         except Exception:
-            return {"vouchers": [], "sent_messages": {}, "user_limits": {}}
+            return {"vouchers": [], "sent_messages": {}, "user_limits": {}, "users": {}}
 
 def save_data(data):
     with open(DATA_FILE, "w") as f:
@@ -89,9 +91,90 @@ async def admin_dashboard(client, message: Message):
     
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# 3. User Command (/start)
+# 3. View Users Command (/users) - Admin Only
+@app.on_message(filters.command("users"))
+async def list_users(client, message: Message):
+    data = load_data()
+    users = data.get("users", {})
+    
+    if not users:
+        await message.reply_text("❌ **လက်ရှိတွင် စနစ်ထဲ၌ အသုံးပြုသူ (User) မရှိသေးပါ။**")
+        return
+    
+    text = f"👥 **လက်ရှိ စနစ်ထဲရှိ အသုံးပြုသူများ (စုစုပေါင်း: {len(users)} ဦး) -**\n\n"
+    for idx, (uid, uinfo) in enumerate(users.items(), 1):
+        name = uinfo.get("name", "Unknown")
+        username = f"@{uinfo.get('username')}" if uinfo.get("username") else "No Username"
+        text += f"{idx}. **{name}** ({username}) | `ID: {uid}`\n"
+    
+    await message.reply_text(text)
+
+# 4. Broadcast Command (/broadcast) - Send Message to All Users
+@app.on_message(filters.command("broadcast"))
+async def broadcast_message(client, message: Message):
+    broadcast_text = message.text.replace("/broadcast", "", 1).strip()
+    
+    if not broadcast_text:
+        await message.reply_text("⚠️ `/broadcast` ၏ အောက်တွင် အားလုံးဆီ ပို့ချင်သော စာသားကို ရိုက်ပေးပါ ဆရာကျော်လူ။\n\nဥပမာ -\n`/broadcast`\n`မနက်ဖြန် Code ဖြည့်ပေးပါမည်။`")
+        return
+    
+    data = load_data()
+    users = data.get("users", {})
+    
+    if not users:
+        await message.reply_text("❌ စာပို့ရန် User များ မရှိသေးပါ။")
+        return
+    
+    success_count = 0
+    fail_count = 0
+    
+    sending_msg = await message.reply_text("⏳ **User များဆီသို့ စာပို့နေပါသည်။ ခဏစောင့်ပါ...**")
+    
+    for uid in users.keys():
+        try:
+            await client.send_message(chat_id=int(uid), text=broadcast_text)
+            success_count += 1
+        except Exception:
+            fail_count += 1
+            
+    await sending_msg.edit_text(
+        f"📢 **Broadcast ပို့ဆောင်မှု ပြီးစီးပါပြီ!**\n\n"
+        f"✅ အောင်မြင်စွာ ပို့ပြီး: **{success_count}** ဦး\n"
+        f"❌ ပို့မရသူ (Bot မသုံးတော့သူ): **{fail_count}** ဦး"
+    )
+
+# 5. Pin Message Command (/pin) - Reply to any message and type /pin
+@app.on_message(filters.command("pin"))
+async def pin_message_cmd(client, message: Message):
+    if not message.reply_to_message:
+        await message.reply_text("⚠️ Pin ထောက်ချင်သော Message ကို Reply ပြန်ပြီး `/pin` ဟု ရိုက်ပေးပါ ဆရာကျော်လူ။")
+        return
+    
+    try:
+        await message.reply_to_message.pin()
+        await message.reply_text("📌 **Message ကို အောင်မြင်စွာ Pin ထောက်လိုက်ပါပြီ!**")
+    except Exception as e:
+        await message.reply_text(f"❌ **Pin ထောက်၍ မရပါ (Bot တွင် Pin Message Permission ရှိမရှိ စစ်ဆေးပါ) -** {e}")
+
+# 6. User Command (/start)
 @app.on_message(filters.command("start"))
 async def start_cmd(client, message: Message):
+    data = load_data()
+    users = data.get("users", {})
+    
+    # Save User Info automatically
+    user_id = str(message.from_user.id)
+    first_name = message.from_user.first_name or ""
+    last_name = message.from_user.last_name or ""
+    full_name = f"{first_name} {last_name}".strip()
+    
+    users[user_id] = {
+        "name": full_name,
+        "username": message.from_user.username or ""
+    }
+    data["users"] = users
+    save_data(data)
+    
     buttons = InlineKeyboardMarkup([
         [InlineKeyboardButton("🎟️ 1 Code ယူမည်", callback_data="get_1")],
         [InlineKeyboardButton("🎟️ 2 Codes ယူမည်", callback_data="get_2")],
@@ -103,7 +186,7 @@ async def start_cmd(client, message: Message):
         reply_markup=buttons
     )
 
-# 4. Handle Code Distribution for Users (With Daily 2-Times Limit)
+# 7. Handle Code Distribution for Users (With Daily 2-Times Limit)
 @app.on_callback_query(filters.regex(r"^get_(\d+)$"))
 async def handle_user_get_codes(client, callback_query: CallbackQuery):
     user_id = str(callback_query.from_user.id)
@@ -167,7 +250,7 @@ async def handle_user_get_codes(client, callback_query: CallbackQuery):
     data["sent_messages"] = sent_messages
     save_data(data)
 
-# 5. User Mark as Used / Delete Action
+# 8. User Mark as Used / Delete Action
 @app.on_callback_query(filters.regex(r"^usr_del_"))
 async def handle_user_delete(client, callback_query: CallbackQuery):
     codes_str = callback_query.data.replace("usr_del_", "")
@@ -187,7 +270,7 @@ async def handle_user_delete(client, callback_query: CallbackQuery):
     
     await callback_query.answer("✅ Code များကို သုံးပြီးကြောင်း မှတ်သားပြီး ဖျက်လိုက်ပါပြီ။", show_alert=True)
 
-# 6. Admin Delete Action (Synchronized Global Deletion)
+# 9. Admin Delete Action (Synchronized Global Deletion)
 @app.on_callback_query(filters.regex(r"^adm_del_"))
 async def handle_admin_delete(client, callback_query: CallbackQuery):
     action = callback_query.data.replace("adm_del_", "")
