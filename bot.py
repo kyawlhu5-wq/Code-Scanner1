@@ -9,7 +9,7 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, 
 # Credentials
 API_ID = 31526501
 API_HASH = "cf2792e0bcbdb620a31dd65a43f88c8a"
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+BOT_TOKEN = "8959668914:AAFAE8hLkeUZy6yu8Xa24pl-Bo-pakl4clc"
 
 app = Client(
     "starlink_bot",
