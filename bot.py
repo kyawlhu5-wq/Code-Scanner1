@@ -24,10 +24,10 @@ from pyrogram.types import (
 
 load_dotenv()
 
-API_ID = int(os.environ["31526501"])
-API_HASH = os.environ["cf2792e0bcbdb620a31dd65a43f88c8a"]
-BOT_TOKEN = os.environ["8959668914:AAFAE8hLkeUZy6yu8Xa24pl-Bo-pakl4clc"]
-ADMIN_ID = int(os.environ["8775300748"])
+API_ID = int(os.environ["API_ID"])
+API_HASH = os.environ["API_HASH"]
+BOT_TOKEN = os.environ["BOT_TOKEN"]
+ADMIN_ID = int(os.environ["ADMIN_ID"])
 
 MM_TZ = timezone(timedelta(hours=6, minutes=30))
 
