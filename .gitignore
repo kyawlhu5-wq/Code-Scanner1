@@ -1,0 +1,8 @@
+.env
+vouchers.json
+vouchers.json.tmp
+vouchers_backup.json
+*.session
+*.session-journal
+__pycache__/
+*.pyc
